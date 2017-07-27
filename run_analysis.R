@@ -1,70 +1,50 @@
-## STEP 0: load required packages
-
-# load the reshape2 package (will be used in STEP 5)
 library(reshape2)
 
+filename <- "getdata_dataset.zip"
 
-## STEP 1: Merges the training and the test sets to create one data set
+## Download and unzip the dataset:
+if (!file.exists(filename)){
+  fileURL <- "https://d396qusza40orc.cloudfront.net/getdata%2Fprojectfiles%2FUCI%20HAR%20Dataset.zip "
+  download.file(fileURL, filename, method="curl")
+}  
+if (!file.exists("UCI HAR Dataset")) { 
+  unzip(filename) 
+}
 
-# read data into data frames
-subject_train <- read.table("train/subject_train.txt")
-subject_test <- read.table("test/subject_test.txt")
-X_train <- read.table("train/X_train.txt")
-X_test <- read.table("test/X_test.txt")
-y_train <- read.table("train/y_train.txt")
-y_test <- read.table("test/y_test.txt")
+# Load activity labels + features
+activityLabels <- read.table("UCI HAR Dataset/activity_labels.txt")
+activityLabels[,2] <- as.character(activityLabels[,2])
+features <- read.table("UCI HAR Dataset/features.txt")
+features[,2] <- as.character(features[,2])
 
-# add column name for subject files
-names(subject_train) <- "subjectID"
-names(subject_test) <- "subjectID"
-
-# add column names for measurement files
-featureNames <- read.table("features.txt")
-names(X_train) <- featureNames$V2
-names(X_test) <- featureNames$V2
-
-# add column name for label files
-names(y_train) <- "activity"
-names(y_test) <- "activity"
-
-# combine files into one dataset
-train <- cbind(subject_train, y_train, X_train)
-test <- cbind(subject_test, y_test, X_test)
-combined <- rbind(train, test)
+# Extract only the data on mean and standard deviation
+featuresWanted <- grep(".*mean.*|.*std.*", features[,2])
+featuresWanted.names <- features[featuresWanted,2]
+featuresWanted.names = gsub('-mean', 'Mean', featuresWanted.names)
+featuresWanted.names = gsub('-std', 'Std', featuresWanted.names)
+featuresWanted.names <- gsub('[-()]', '', featuresWanted.names)
 
 
-## STEP 2: Extracts only the measurements on the mean and standard
-## deviation for each measurement.
+# Load the datasets
+train <- read.table("UCI HAR Dataset/train/X_train.txt")[featuresWanted]
+trainActivities <- read.table("UCI HAR Dataset/train/Y_train.txt")
+trainSubjects <- read.table("UCI HAR Dataset/train/subject_train.txt")
+train <- cbind(trainSubjects, trainActivities, train)
 
-# determine which columns contain "mean()" or "std()"
-meanstdcols <- grepl("mean\\(\\)", names(combined)) |
-    grepl("std\\(\\)", names(combined))
+test <- read.table("UCI HAR Dataset/test/X_test.txt")[featuresWanted]
+testActivities <- read.table("UCI HAR Dataset/test/Y_test.txt")
+testSubjects <- read.table("UCI HAR Dataset/test/subject_test.txt")
+test <- cbind(testSubjects, testActivities, test)
 
-# ensure that we also keep the subjectID and activity columns
-meanstdcols[1:2] <- TRUE
+# merge datasets and add labels
+allData <- rbind(train, test)
+colnames(allData) <- c("subject", "activity", featuresWanted.names)
 
-# remove unnecessary columns
-combined <- combined[, meanstdcols]
+# turn activities & subjects into factors
+allData$activity <- factor(allData$activity, levels = activityLabels[,1], labels = activityLabels[,2])
+allData$subject <- as.factor(allData$subject)
 
+allData.melted <- melt(allData, id = c("subject", "activity"))
+allData.mean <- dcast(allData.melted, subject + activity ~ variable, mean)
 
-## STEP 3: Uses descriptive activity names to name the activities
-## in the data set. 
-
-## STEP 4: Appropriately labels the data set with descriptive
-## activity names. 
-
-# convert the activity column from integer to factor
-combined$activity <- factor(combined$activity, labels=c("Walking",
-    "Walking Upstairs", "Walking Downstairs", "Sitting", "Standing", "Laying"))
-
-
-## STEP 5: Creates a second, independent tidy data set with the
-## average of each variable for each activity and each subject.
-
-# create the tidy data set
-melted <- melt(combined, id=c("subjectID","activity"))
-tidy <- dcast(melted, subjectID+activity ~ variable, mean)
-
-# write the tidy data set to a file
-write.table(tidy, "tidy.txt", row.names=FALSE)
-
+write.table(allData.mean, "tidy.txt", row.names = FALSE, quote = FALSE)
